@@ -7,8 +7,6 @@ import os
 import matplotlib.pyplot as plt
 import shutil
 import tempfile
-import streamlit as st
-
 
 # Load the pre-trained sentence transformer model
 model = SentenceTransformer('all-mpnet-base-v2')
@@ -97,42 +95,27 @@ def insert_image_into_pdf(pdf_path, image_path, page_number, image_rect):
     shutil.move(temp_path, output_pdf_path)
 
 
-import streamlit as st
-# ... other imports ...
-
 def main():
-    st.set_page_config(page_title="Document Processor", page_icon=":evergreen_tree:")
-    st.title("Document Processing")
+    pdf_filename = 'NOV_Highlights-Guide_2024.pdf'
+    docx_filename = 'Quote Table - input.docx'
+    output_folder = '.'
 
-    col1, col2 = st.columns(2)
-    with col1:
-        pdf_file = st.file_uploader("Upload PDF file", type="pdf")
-    with col2:
-        docx_file = st.file_uploader("Upload DOCX file", type="docx")
+    # Ensure the output folder exists
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
 
-    if pdf_file and docx_file:
-        # 1. Preprocessing
-        titles = detect_titles(pdf_file, model)
-        table_locations = find_table_locations(pdf_file, titles)
-        docx_tables = docx_to_dataframes(docx_file)
+    titles = [title_text for _, title_text in detect_titles(pdf_filename, model)]  # Extract titles from detection function
+    table_locations = find_table_locations(pdf_filename, titles)
+    docx_tables = docx_to_dataframes(docx_filename)
 
-        # 2. Table Processing and Image Insertion  
-        for i, (page_num, rect) in enumerate(table_locations.items()):
-            if i < len(docx_tables): 
-                df = docx_tables[i]  
-                image_path = os.path.join('.', f"table_{i}.png")
-                dataframe_to_image(df, image_path)
-                insert_image_into_pdf(pdf_file, image_path, page_num, rect)  
+    for i, (page_num, rect) in enumerate(table_locations.items()):
+        if i < len(docx_tables):
+            df = docx_tables[i]
+            image_path = os.path.join(output_folder, f"table_{i}.png")
+            dataframe_to_image(df, image_path)
 
-        # 3. Success Message and Download        
-        st.success("Processing Complete!")
-        with open("modified_output.pdf", "rb") as pdf_file:  # Adjust filename
-            download_button = st.download_button(
-                label="Download Modified PDF",
-                data=pdf_file,
-                file_name="modified_output.pdf",
-                mime="application/pdf"
-            )
+            # Use detected table locations for inserting images
+            insert_image_into_pdf(pdf_filename, image_path, page_num, rect)
 
 if __name__ == "__main__":
     main()
