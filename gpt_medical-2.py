@@ -7,6 +7,8 @@ import os
 import matplotlib.pyplot as plt
 import shutil
 import tempfile
+import streamlit as st
+
 
 # Load the pre-trained sentence transformer model
 model = SentenceTransformer('all-mpnet-base-v2')
@@ -74,48 +76,63 @@ def dataframe_to_image(df, image_path):
     plt.savefig(image_path, bbox_inches='tight', pad_inches=0.05)
     plt.close()
 
-def cover_table_with_white_rectangle(pdf_path, page_number, rect):
-    """
-    Enhanced version with logging to confirm operation effectiveness.
-    """
-    print(f"Attempting to cover table at page {page_number+1} with rect: {rect}")
-    doc = fitz.open(pdf_path)
-    page = doc[page_number]
+def insert_image_into_pdf(pdf_path, image_path, page_number, image_rect):
+    # Create a temporary file
+    temp_fd, temp_path = tempfile.mkstemp(suffix='.pdf')
+    os.close(temp_fd)  # Close the file descriptor
+    
+    # Copy the original PDF to the temporary file
+    shutil.copyfile(pdf_path, temp_path)
 
-    # Add logging to confirm rectangle dimensions
-    print(f"Covering with rectangle: {rect}")
+    # Open the temporary file for modifications
+    doc = fitz.open(temp_path)
+    page = doc.load_page(page_number)
+    page.insert_image(image_rect, filename=image_path)
+    doc.close()  # Close the document to ensure all changes are written
 
-    white_rect = page.new_shape()
-    white_rect.draw_rect(rect)
-    white_rect.finish(color=(1, 1, 1), fill=(1, 1, 1))
-    white_rect.commit()
+    # Define the final output file name
+    output_pdf_path = pdf_path.replace(".pdf", "_modified.pdf")
 
-    output_pdf_path = pdf_path.replace(".pdf", "_tables_covered.pdf")
-    doc.save(output_pdf_path)
-    doc.close()
-    return output_pdf_path
+    # Move the temporary file to the desired output location
+    shutil.move(temp_path, output_pdf_path)
 
+
+import streamlit as st
+# ... other imports ...
 
 def main():
-    pdf_filename = 'NOV_Highlights-Guide_2024.pdf'
-    docx_filename = 'Quote Table - input.docx'
-    output_folder = '.'
+    st.set_page_config(page_title="Document Processor", page_icon=":evergreen_tree:")
+    st.title("Document Processing")
 
-    # Ensure the output folder exists
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
+    col1, col2 = st.columns(2)
+    with col1:
+        pdf_file = st.file_uploader("Upload PDF file", type="pdf")
+    with col2:
+        docx_file = st.file_uploader("Upload DOCX file", type="docx")
 
-    titles = [title_text for _, title_text in detect_titles(pdf_filename, model)]  # Extract titles from detection function
-    table_locations = find_table_locations(pdf_filename, titles)
-    docx_tables = docx_to_dataframes(docx_filename)
+    if pdf_file and docx_file:
+        # 1. Preprocessing
+        titles = detect_titles(pdf_file, model)
+        table_locations = find_table_locations(pdf_file, titles)
+        docx_tables = docx_to_dataframes(docx_file)
 
-    # Cover each detected table with a white rectangle
-    for page_num, rect in table_locations.items():
-        modified_pdf_path = cover_table_with_white_rectangle(pdf_filename, page_num, rect)
-        print(f"Covered tables on page {page_num + 1} in {modified_pdf_path}")
+        # 2. Table Processing and Image Insertion  
+        for i, (page_num, rect) in enumerate(table_locations.items()):
+            if i < len(docx_tables): 
+                df = docx_tables[i]  
+                image_path = os.path.join('.', f"table_{i}.png")
+                dataframe_to_image(df, image_path)
+                insert_image_into_pdf(pdf_file, image_path, page_num, rect)  
 
-    # Further operations like inserting new table images can proceed here,
-    # using `modified_pdf_path` as the source PDF.
+        # 3. Success Message and Download        
+        st.success("Processing Complete!")
+        with open("modified_output.pdf", "rb") as pdf_file:  # Adjust filename
+            download_button = st.download_button(
+                label="Download Modified PDF",
+                data=pdf_file,
+                file_name="modified_output.pdf",
+                mime="application/pdf"
+            )
 
 if __name__ == "__main__":
     main()
